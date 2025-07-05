@@ -146,7 +146,46 @@ anomalib을 사용하여 EfficientAD를 구현하는 구체적인 방법을 단�
 2. **의존성 확인:** torch, torchvision, opencv-python, pyyaml 등 필수 라이브러리가 함께 설치됩니다.21  
 3. **ImageNette 데이터셋 다운로드:** EfficientAD의 '사전 훈련 페널티' 손실 항을 계산하기 위해서는 외부 이미지 데이터셋이 필요합니다. anomalib은 기본적으로 ImageNet의 작은 서브셋인 ImageNette를 사용하며, 훈련 시 지정된 경로에 자동으로 다운로드합니다. config.yaml 파일에서 이 데이터셋의 경로를 올바르게 지정해야 합니다.11
 
+### **실전 구현: 훈련 및 추론 명령어**
+
+anomalib을 사용하여 EfficientAD 모델을 훈련하고 추론하는 구체적인 명령어는 다음과 같습니다.
+
+#### **1. 훈련 (Training)**
+
+훈련은 `efficient_ad_project/tools/train.py` 스크립트와 설정 파일(`configs/bottle_config.yaml`)을 사용하여 수행됩니다.
+
+**명령어:**
+```bash
+python F:\Source\EfficientAD\efficient_ad_project\tools\train.py --config F:\Source\EfficientAD\efficient_ad_project\configs\bottle_config.yaml
+```
+
+**설명:**
+*   `--config`: 훈련에 사용할 설정 파일의 경로를 지정합니다. 이 파일은 데이터셋 경로, 모델 크기, 학습률 등 훈련 관련 모든 파라미터를 정의합니다.
+*   **데이터셋 경로 설정**: `configs/bottle_config.yaml` 파일 내 `data.path`는 훈련 데이터셋의 루트 경로를 지정합니다. 예를 들어, `F:/Source/EfficientAD/datasets/mvtec_anomaly_detection`으로 설정되어야 합니다.
+
+**GPU/CPU 가속기 설정:**
+`efficient_ad_project/tools/train.py` 파일 내에서 `anomalib.engine.Engine` 초기화 시 `accelerator` 파라미터를 통해 훈련에 사용할 가속기를 지정할 수 있습니다.
+*   **CUDA (GPU) 사용:** `accelerator="cuda"`
+*   **CPU 사용:** `accelerator="cpu"`
+
+시스템에 CUDA 호환 GPU가 없거나 CUDA 관련 오류가 발생하는 경우, `train.py` 파일에서 `accelerator="cpu"`로 변경해야 합니다.
+
+#### **2. 추론 (Inference)**
+
+훈련된 모델을 사용하여 이미지에 대한 추론을 수행하려면 `efficient_ad_project/tools/inference.py` 스크립트를 사용합니다.
+
+**명령어:**
+```bash
+python F:\Source\EfficientAD\efficient_ad_project\tools\inference.py --model_path F:\Source\EfficientAD\results\EfficientAd\MVTecAD\bottle\v1\weights\lightning\model.ckpt --image_path F:\Source\EfficientAD\datasets\mvtec_anomaly_detection\bottle\test\broken_large\000.png --output_path F:\Source\EfficientAD\results\EfficientAd\MVTecAD\bottle\v1\broken_large_000_result.png
+```
+
+**설명:**
+*   `--model_path`: 훈련된 모델 체크포인트 파일(`.ckpt`)의 경로를 지정합니다.
+*   `--image_path`: 추론을 수행할 이미지 파일의 경로를 지정합니다.
+*   `--output_path`: 추론 결과(이상 맵, 점수 등이 시각화된 이미지)를 저장할 경로를 지정합니다.
+
 ### **anomalib 구현 코드 레벨 분석**
+
 
 #### **torch\_model.py 분석**
 

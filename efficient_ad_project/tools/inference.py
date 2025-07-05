@@ -52,7 +52,8 @@ def infer(model_path: str, image_path: str, image_size: tuple[int, int], thresho
     with torch.no_grad():
         output = model(image_tensor)
 
-    anomaly_map = np.zeros(image_size, dtype=np.float32)
+    anomaly_map = output[1].cpu().numpy().astype(np.float32)
+    anomaly_map = cv2.resize(anomaly_map, (image_size[1], image_size[0]))
     anomaly_score = output[0].item()
 
     # 5. Visualize and save the results

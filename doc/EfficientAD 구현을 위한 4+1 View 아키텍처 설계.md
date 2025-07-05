@@ -90,6 +90,13 @@ classDiagram
 4. **손실 계산**: LossCalculator가 손실을 계산한다.  
 5. **가중치 업데이트**: Student와 Autoencoder의 가중치를 업데이트한다.
 
+**GPU/CPU 가속기 설정:**
+훈련은 `efficient_ad_project/tools/train.py` 파일 내에서 `anomalib.engine.Engine` 초기화 시 `accelerator` 파라미터를 통해 가속기를 지정합니다.
+*   **CUDA (GPU) 사용:** `accelerator="cuda"`
+*   **CPU 사용:** `accelerator="cpu"`
+
+시스템에 CUDA 호환 GPU가 없거나 CUDA 관련 오류가 발생하는 경우, `train.py` 파일에서 `accelerator="cpu"`로 변경해야 합니다.
+
 ### **추론 프로세스 (Inference Process)**
 
 추론 프로세스는 개별 이미지에 대해 작동하므로 데이터 제공자의 직접적인 영향은 없으나, 테스트 단계에서는 DatasetProvider를 통해 실제 또는 가상의 테스트셋을 불러와 모델 성능을 평가할 수 있다.
@@ -144,7 +151,7 @@ data:
   source: synthetic \# 또는 real  
     
   \# 'real' 소스일 경우 사용되는 설정  
-  path: ./data/pcb  
+  path: F:/Source/EfficientAD/datasets/mvtec_anomaly_detection  
   category: screw  
     
   \# 공통 설정  

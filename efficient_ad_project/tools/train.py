@@ -8,6 +8,9 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from anomalib.engine import Engine
 from anomalib.models import EfficientAd
+import torch
+from anomalib.data import MVTecAD
+from torchvision.transforms.v2 import Compose, Resize, Normalize, ToDtype
 
 from src.data.provider import RealDatasetProvider, SyntheticDatasetProvider
 
@@ -31,15 +34,31 @@ def train(config_path: str):
 
     if data_source == "real":
         provider = RealDatasetProvider(config)
+        datamodule = provider.datamodule
     elif data_source == "synthetic":
         provider = SyntheticDatasetProvider(config)
+        datamodule = provider.datamodule
+    elif data_source == "mvtec":
+        image_size = tuple(config["data"]["image_size"])
+        augmentations = Compose([
+            Resize(image_size),
+            Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
+            ToDtype(torch.float32, scale=True),
+        ])
+        datamodule = MVTecAD(
+            root=config["data"]["path"],
+            category=config["data"]["category"],
+            train_batch_size=config["data"]["train_batch_size"],
+            eval_batch_size=config["data"]["eval_batch_size"],
+            augmentations=augmentations,
+        )
     else:
         raise ValueError(f"Unknown data source: {data_source}")
 
     # 2. Initialize the Anomalib Engine
     # Create the model instance first
     model = EfficientAd(
-        model_size=config["model"]["model_size"], # 다시 원래대로 대문자 사용
+        model_size=config["model"]["model_size"],
         # Add other model-specific parameters from config as needed
     )
 
@@ -49,13 +68,9 @@ def train(config_path: str):
         # Add other engine parameters from config as needed
     )
 
-    # 3. Get data loaders from the provider
-    train_loader = provider.get_train_loader()
-    test_loader = provider.get_test_loader()
-
-    # 4. Start training
+    # 3. Start training
     print("Starting training...")
-    engine.train(model=model, datamodule=provider.datamodule)
+    engine.train(model=model, datamodule=datamodule)
     print("Training finished.")
 
 
