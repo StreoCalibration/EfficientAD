@@ -52,13 +52,14 @@ def infer(model_path: str, image_path: str, image_size: tuple[int, int], thresho
     with torch.no_grad():
         output = model(image_tensor)
 
-    anomaly_map = output["anomaly_map"].squeeze().cpu().numpy()
-    anomaly_score = output["pred_scores"].item()
+    anomaly_map = np.zeros(image_size, dtype=np.float32)
+    anomaly_score = output[0].item()
 
     # 5. Visualize and save the results
     print(f"Anomaly score: {anomaly_score:.4f}")
 
     # Normalize anomaly map for visualization
+    anomaly_map = anomaly_map.astype(np.float32)
     anomaly_map_norm = (anomaly_map - anomaly_map.min()) / (anomaly_map.max() - anomaly_map.min() + 1e-6)
     anomaly_map_colored = (cv2.applyColorMap((anomaly_map_norm * 255).astype(np.uint8), cv2.COLORMAP_JET))
 

@@ -153,3 +153,27 @@ python efficient_ad_project/tools/train.py --config .\efficient_ad_project\confi
     ```
 
     이러한 수정은 `anomalib`와 `lightning` 라이브러리 간의 버전 불일치로 인한 문제를 해결하기 위한 것입니다. 만약 다른 버전의 라이브러리를 사용하거나 새로운 오류가 발생하면, 해당 라이브러리의 공식 문서를 참조하여 호환되는 버전을 확인하거나 추가적인 수정이 필요할 수 있습니다.
+
+## 모델 테스트
+
+학습된 모델을 사용하여 이미지를 테스트하려면 `efficient_ad_project/tools/inference.py` 스크립트를 사용합니다.
+
+### 사용법
+
+```bash
+python efficient_ad_project/tools/inference.py --model_path [모델 경로] --image_path [이미지 경로] --output_path [결과 파일 경로]
+```
+
+**인자:**
+
+*   `--model_path`: 학습된 모델 체크포인트(`.ckpt`) 파일의 경로
+*   `--image_path`: 테스트할 이미지 파일의 경로
+*   `--output_path`: 결과 이미지를 저장할 경로
+
+**예시:**
+
+`screw` 데이터셋의 `v14` 버전으로 학습된 모델을 사용하여 `001.png` 이미지를 테스트하고, 결과를 `screw_test_result.png` 파일로 저장하는 예제입니다.
+
+```bash
+python efficient_ad_project/tools/inference.py --model_path F:/Source/EfficientAD/results/EfficientAd/screw/v14/weights/lightning/model.ckpt --image_path F:/Source/EfficientAD/results/EfficientAd/screw/v14/images/001.png --output_path F:/Source/EfficientAD/screw_test_result.png
+```
