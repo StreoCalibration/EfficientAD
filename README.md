@@ -160,20 +160,24 @@ python efficient_ad_project/tools/train.py --config .\efficient_ad_project\confi
 
 ### 사용법
 
+`inference.py` 스크립트는 이제 단일 이미지 또는 이미지 디렉토리를 처리할 수 있으며, 결과 이미지에 이물 위치와 추론 시간을 표시하고, 전체 평균 추론 시간을 보고합니다.
+
 ```bash
-python efficient_ad_project/tools/inference.py --model_path [모델 경로] --image_path [이미지 경로] --output_path [결과 파일 경로]
+python efficient_ad_project/tools/inference.py --model_path [모델 경로] --input_path [이미지/디렉토리 경로] --output_path [결과 파일/디렉토리 경로]
 ```
 
 **인자:**
 
 *   `--model_path`: 학습된 모델 체크포인트(`.ckpt`) 파일의 경로
-*   `--image_path`: 테스트할 이미지 파일의 경로
-*   `--output_path`: 결과 이미지를 저장할 경로
+*   `--input_path`: 테스트할 이미지 파일 또는 이미지들이 포함된 디렉토리의 경로
+*   `--output_path`: 결과 이미지를 저장할 파일 경로 (단일 이미지 입력 시) 또는 디렉토리 경로 (디렉토리 입력 시). 디렉토리 입력 시, 원본 디렉토리 구조를 유지하며 결과가 저장됩니다.
 
 **예시:**
 
-`screw` 데이터셋의 `v14` 버전으로 학습된 모델을 사용하여 `001.png` 이미지를 테스트하고, 결과를 `screw_test_result.png` 파일로 저장하는 예제입니다.
+`bottle` 데이터셋으로 학습된 모델을 사용하여 테스트 데이터셋 전체를 추론하고, 결과를 `F:/Source/EfficientAD/results_Test` 디렉토리에 저장하는 예제입니다.
 
 ```bash
-python efficient_ad_project/tools/inference.py --model_path F:/Source/EfficientAD/results/EfficientAd/screw/v14/weights/lightning/model.ckpt --image_path F:/Source/EfficientAD/results/EfficientAd/screw/v14/images/001.png --output_path F:/Source/EfficientAD/screw_test_result.png
+python F:/Source/EfficientAD/efficient_ad_project/tools/inference.py --model_path F:/Source/EfficientAD/results/EfficientAd/MVTecAD/bottle/v1/weights/lightning/model.ckpt --input_path F:/Source/EfficientAD/datasets/mvtec_anomaly_detection/bottle/test --output_path F:/Source/EfficientAD/results_Test
 ```
+
+이 명령을 실행하면 `F:/Source/EfficientAD/inference_results` 디렉토리 내에 `broken_large`, `broken_small`, `contamination`, `good`과 같은 하위 디렉토리가 생성되고, 각 원본 이미지에 해당하는 결과 이미지가 해당 하위 디렉토리에 저장됩니다. 각 결과 이미지에는 이물 위치가 노란색 윤곽선으로 표시되며, 개별 추론 시간도 함께 표시됩니다. 모든 추론이 완료되면 전체 이미지에 대한 평균 추론 시간이 콘솔에 출력됩니다.

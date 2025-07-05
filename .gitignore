@@ -1,6 +1,7 @@
 # Ignore data and results directories
 efficient_ad_project/data/
 results/
+results_Test/
 datasets/
 
 # Ignore virtual environment
