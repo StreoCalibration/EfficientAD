@@ -44,6 +44,8 @@ def train(config_path: str):
     )
 
     engine = Engine(
+        accelerator="cuda",
+        max_epochs=config["trainer"]["max_epochs"],
         # Add other engine parameters from config as needed
     )
 

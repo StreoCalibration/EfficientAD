@@ -17,4 +17,4 @@ data:
   eval_batch_size: 32
 
 trainer:
-  max_epochs: 100
+  max_epochs: 20

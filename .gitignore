@@ -5,3 +5,6 @@ datasets/
 
 # Ignore virtual environment
 venv/
+
+# Ignore specific result folders
+efficient_ad_project/results/EfficientAd/screw/
