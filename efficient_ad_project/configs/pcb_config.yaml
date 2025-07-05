@@ -1,0 +1,20 @@
+model:
+  name: efficient_ad
+  model_size: small
+  lr: 0.0001
+
+data:
+  # 'real' 또는 'synthetic' 중 선택하여 데이터 소스 지정
+  source: real # 또는 synthetic
+    
+  # 'real' 소스일 경우 사용되는 설정
+  path: ./efficient_ad_project/data/pcb
+  category: screw
+    
+  # 공통 설정
+  image_size: [256, 256]
+  train_batch_size: 1
+  eval_batch_size: 32
+
+trainer:
+  max_epochs: 100

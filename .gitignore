@@ -1,0 +1,7 @@
+# Ignore data and results directories
+efficient_ad_project/data/
+efficient_ad_project/results/
+datasets/
+
+# Ignore virtual environment
+venv/
