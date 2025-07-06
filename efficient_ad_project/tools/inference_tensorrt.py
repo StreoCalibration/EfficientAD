@@ -1,42 +1,58 @@
 import argparse
 import cv2
 import numpy as np
-import torch
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
 import os
 import time
+import tensorrt as trt
+import pycuda.driver as cuda
+import pycuda.autoinit # This initializes CUDA context
 
-from anomalib.models import EfficientAd
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
+# Initialize TensorRT logger
+TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 
 def get_args():
-    """Get command line arguments."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, required=True, help="Path to the trained model checkpoint (.ckpt).")
+    parser.add_argument("--model_path", type=str, required=True, help="Path to the TensorRT engine file (.engine).")
     parser.add_argument("--input_path", type=str, required=True, help="Path to the image or directory to inspect.")
     parser.add_argument("--image_size", type=int, nargs=2, default=[256, 256], help="Image size (height width) for resizing.")
     parser.add_argument("--threshold", type=float, default=0.5, help="Anomaly score threshold for classification.")
     parser.add_argument("--output_path", type=str, default="./result.png", help="Path to save the output visualization.")
     return parser.parse_args()
 
-
 def infer(model_path: str, input_path: str, image_size: tuple[int, int], threshold: float, output_path: str):
-    """Main inference function."""
+    # 0. Load TensorRT engine
+    print(f"Loading TensorRT engine from {model_path}")
+    with open(model_path, "rb") as f, trt.Runtime(TRT_LOGGER) as runtime:
+        engine = runtime.deserialize_cuda_engine(f.read())
     
-    # 0. Set device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    context = engine.create_execution_context()
 
-    # 1. Load the model from the checkpoint
-    print(f"Loading model from {model_path}")
-    model = EfficientAd.load_from_checkpoint(model_path).to(device)
-    model.eval() # Set model to evaluation mode
+    # Allocate buffers
+    inputs = []
+    outputs = []
+    bindings = []
+    stream = cuda.Stream()
 
-    # 2. Define image transformations (must be same as training)
+    for binding in engine:
+        size = trt.volume(engine.get_binding_shape(binding)) * engine.get_binding_dtype(binding).itemsize
+        dtype = trt.nptype(engine.get_binding_dtype(binding))
+        
+        host_mem = cuda.pagelocked_empty(size // dtype.itemsize, dtype)
+        device_mem = cuda.mem_alloc(size)
+
+        bindings.append(int(device_mem))
+        if engine.binding_is_input(binding):
+            inputs.append({'host': host_mem, 'device': device_mem})
+        else:
+            outputs.append({'host': host_mem, 'device': device_mem})
+
+    # Define image transformations (must be same as training)
     transform = A.Compose([
         A.Resize(height=image_size[0], width=image_size[1]),
-        A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)), # Example normalization
+        A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
         ToTensorV2(),
     ])
 
@@ -55,7 +71,7 @@ def infer(model_path: str, input_path: str, image_size: tuple[int, int], thresho
 
     for i, image_path in enumerate(image_paths):
         print(f"Processing image {i+1}/{len(image_paths)}: {image_path}")
-        # 3. Load and preprocess the image
+        # Load and preprocess the image
         image_bgr = cv2.imread(image_path)
         if image_bgr is None:
             print(f"Warning: Could not read image from {image_path}. Skipping.")
@@ -63,35 +79,48 @@ def infer(model_path: str, input_path: str, image_size: tuple[int, int], thresho
         image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
         
         transformed = transform(image=image_rgb)
-        image_tensor = transformed["image"].unsqueeze(0).to(device) # Add batch dimension and move to device
+        # Input to TensorRT is NCHW float32
+        input_data = transformed["image"].unsqueeze(0).cpu().numpy().astype(np.float32)
 
-        # 4. Perform inference and measure time
+        # Copy input data to host buffer
+        np.copyto(inputs[0]['host'], input_data.ravel())
+
+        # Perform inference and measure time
         print("Performing inference...")
         start_time = time.time()
-        with torch.no_grad():
-            output = model(image_tensor)
+        cuda.memcpy_htod_async(inputs[0]['device'], inputs[0]['host'], stream)
+        context.execute_async_v2(bindings=bindings, stream_handle=stream.handle)
+        for out in outputs:
+            cuda.memcpy_dtoh_async(out['host'], out['device'], stream)
+        stream.synchronize()
         end_time = time.time()
         inference_time = end_time - start_time
         all_inference_times.append(inference_time)
 
-        anomaly_map = output[1].cpu().numpy().astype(np.float32)
-        anomaly_score = output[0].item()
+        # Get output names and map them
+        output_names = [engine.get_binding_name(i) for i in range(engine.num_bindings) if not engine.binding_is_input(i)]
+        output_dict = {}
+        for j, name in enumerate(output_names):
+            output_dict[name] = outputs[j]['host']
 
-        # 5. Visualize and save the results
+        anomaly_score = output_dict['pred_score'].item()
+        # Reshape anomaly_map from flat array to 2D image size
+        anomaly_map = output_dict['anomaly_map'].reshape(image_size).astype(np.float32)
+
+        # Visualize and save the results
         print(f"Anomaly score: {anomaly_score:.4f}")
         print(f"Inference time: {inference_time:.4f} seconds")
 
         # Normalize anomaly map for visualization
         anomaly_map = anomaly_map.astype(np.float32)
         anomaly_map_norm = (anomaly_map - anomaly_map.min()) / (anomaly_map.max() - anomaly_map.min() + 1e-6)
-        anomaly_map_colored = (cv2.applyColorMap((anomaly_map_norm * 255).astype(np.uint8), cv2.COLORMAP_JET))
+        anomaly_map_colored = cv2.applyColorMap(np.ascontiguousarray((anomaly_map_norm * 255).astype(np.uint8)), cv2.COLORMAP_JET)
 
         # Overlay heatmap on original image
         image_resized = cv2.resize(image_bgr, (image_size[1], image_size[0]))
-        overlay = cv2.addWeighted(image_resized, 0.6, anomaly_map_colored, 0.4, 0)
+        overlay = cv2.addWeighted(image_resized.astype(np.float32), 0.6, anomaly_map_colored.astype(np.float32), 0.4, 0).astype(np.uint8)
 
         # Create binary mask from anomaly map for contour detection
-        # Use a threshold (e.g., 0.5) on the normalized anomaly map to identify anomalous regions
         binary_mask = (anomaly_map_norm > threshold).astype(np.uint8) * 255
         
         # Find contours

@@ -2,7 +2,8 @@ import argparse
 from pathlib import Path
 
 from anomalib.models import EfficientAd
-from anomalib.export import export, ExportMode
+from anomalib.engine import Engine
+from anomalib.deploy import ExportType
 
 
 def get_args():
@@ -26,10 +27,11 @@ def export_to_openvino(model_path: str, output_dir: str, image_size: tuple[int, 
 
     # 2. Export the model to OpenVINO format
     print(f"Exporting model to OpenVINO format in {output_dir}...")
-    export(
+    engine = Engine()
+    engine.export(
         model=model,
+        export_type=ExportType.OPENVINO,
         input_size=image_size,
-        export_mode=ExportMode.OPENVINO,
         export_root=output_dir,
     )
 

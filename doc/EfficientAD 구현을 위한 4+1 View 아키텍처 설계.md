@@ -97,6 +97,10 @@ classDiagram
 
 시스템에 CUDA 호환 GPU가 없거나 CUDA 관련 오류가 발생하는 경우, `train.py` 파일에서 `accelerator="cpu"`로 변경해야 합니다.
 
+### **모델 내보내기 (Model Export)**
+
+훈련된 PyTorch 모델은 ONNX와 같은 다른 형식으로 내보내어 다양한 환경에서 효율적으로 배포될 수 있습니다.
+
 ### **추론 프로세스 (Inference Process)**
 
 추론 프로세스는 개별 이미지에 대해 작동하므로 데이터 제공자의 직접적인 영향은 없으나, 테스트 단계에서는 DatasetProvider를 통해 실제 또는 가상의 테스트셋을 불러와 모델 성능을 평가할 수 있다.
@@ -137,7 +141,9 @@ efficient\_ad\_project/
 │   ├── train.py  
 │   └── inference.py  
 └── deployment/  
-    └── export\_openvino.py
+    ├── export\_onnx.py \# \[신규\] ONNX 모델 내보내기 스크립트
+    ├── export\_openvino.py
+    └── export\_tensorrt.py
 
 ### **설정 파일 예시 (configs/pcb\_config.yaml)**
 

@@ -3,6 +3,7 @@ efficient_ad_project/data/
 results/
 results_Test/
 datasets/
+results_inference/bottle_test_openvino/
 
 # Ignore virtual environment
 venv/

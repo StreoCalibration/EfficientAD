@@ -1,39 +1,32 @@
 import argparse
 import cv2
 import numpy as np
-import torch
+import onnxruntime
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import os
 import time
 
-from anomalib.models import EfficientAd
-
-
 def get_args():
     """Get command line arguments."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, required=True, help="Path to the trained model checkpoint (.ckpt).")
+    parser.add_argument("--model_path", type=str, required=True, help="Path to the ONNX model (.onnx).")
     parser.add_argument("--input_path", type=str, required=True, help="Path to the image or directory to inspect.")
     parser.add_argument("--image_size", type=int, nargs=2, default=[256, 256], help="Image size (height width) for resizing.")
     parser.add_argument("--threshold", type=float, default=0.5, help="Anomaly score threshold for classification.")
-    parser.add_argument("--output_path", type=str, default="./result.png", help="Path to save the output visualization.")
+    parser.add_argument("--output_path", type=str, default="./results_Test/bottle_test_onnx", help="Path to save the output visualization.")
     return parser.parse_args()
 
-
-def infer(model_path: str, input_path: str, image_size: tuple[int, int], threshold: float, output_path: str):
-    """Main inference function."""
+def infer_onnx(model_path: str, input_path: str, image_size: tuple[int, int], threshold: float, output_path: str):
+    """Main inference function for ONNX models."""
     
-    # 0. Set device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    # 0. Set up ONNX runtime session
+    print(f"Loading ONNX model from {model_path}")
+    session = onnxruntime.InferenceSession(model_path, providers=onnxruntime.get_available_providers())
+    input_name = session.get_inputs()[0].name
+    output_names = [output.name for output in session.get_outputs()]
 
-    # 1. Load the model from the checkpoint
-    print(f"Loading model from {model_path}")
-    model = EfficientAd.load_from_checkpoint(model_path).to(device)
-    model.eval() # Set model to evaluation mode
-
-    # 2. Define image transformations (must be same as training)
+    # 1. Define image transformations (must be same as training)
     transform = A.Compose([
         A.Resize(height=image_size[0], width=image_size[1]),
         A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)), # Example normalization
@@ -55,7 +48,7 @@ def infer(model_path: str, input_path: str, image_size: tuple[int, int], thresho
 
     for i, image_path in enumerate(image_paths):
         print(f"Processing image {i+1}/{len(image_paths)}: {image_path}")
-        # 3. Load and preprocess the image
+        # 2. Load and preprocess the image
         image_bgr = cv2.imread(image_path)
         if image_bgr is None:
             print(f"Warning: Could not read image from {image_path}. Skipping.")
@@ -63,35 +56,53 @@ def infer(model_path: str, input_path: str, image_size: tuple[int, int], thresho
         image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
         
         transformed = transform(image=image_rgb)
-        image_tensor = transformed["image"].unsqueeze(0).to(device) # Add batch dimension and move to device
+        image_tensor = transformed["image"].numpy().astype(np.float32) # Convert to numpy array
+        image_tensor = np.expand_dims(image_tensor, axis=0) # Add batch dimension
 
-        # 4. Perform inference and measure time
+        # 3. Perform inference and measure time
         print("Performing inference...")
         start_time = time.time()
-        with torch.no_grad():
-            output = model(image_tensor)
+        outputs = session.run(output_names, {input_name: image_tensor})
         end_time = time.time()
         inference_time = end_time - start_time
         all_inference_times.append(inference_time)
 
-        anomaly_map = output[1].cpu().numpy().astype(np.float32)
-        anomaly_score = output[0].item()
+        # Assuming the ONNX model outputs are in the same order as PyTorch model (score, anomaly_map)
+        anomaly_score = outputs[0].item()
+        
+        print(f"Raw shape of outputs[1]: {outputs[1].shape}") # Add this line for debugging
 
-        # 5. Visualize and save the results
-        print(f"Anomaly score: {anomaly_score:.4f}")
-        print(f"Inference time: {inference_time:.4f} seconds")
+        anomaly_map = outputs[1].squeeze() # Remove batch and channel dimensions
+        anomaly_map = anomaly_map.astype(np.float32) # Convert to float32 immediately
+        
+        # If anomaly_map is not 2D (H, W), resize it to image_size
+        if len(anomaly_map.shape) != 2 or anomaly_map.shape != image_size:
+            print(f"Resizing anomaly_map from {anomaly_map.shape} to {image_size}")
+            anomaly_map = cv2.resize(anomaly_map, (image_size[1], image_size[0]), interpolation=cv2.INTER_LINEAR)
 
-        # Normalize anomaly map for visualization
-        anomaly_map = anomaly_map.astype(np.float32)
         anomaly_map_norm = (anomaly_map - anomaly_map.min()) / (anomaly_map.max() - anomaly_map.min() + 1e-6)
-        anomaly_map_colored = (cv2.applyColorMap((anomaly_map_norm * 255).astype(np.uint8), cv2.COLORMAP_JET))
+
+        # Ensure the array is contiguous and then convert to uint8
+        anomaly_map_for_colormap = np.ascontiguousarray((anomaly_map_norm * 255).astype(np.uint8))
+        anomaly_map_colored = (cv2.applyColorMap(anomaly_map_for_colormap, cv2.COLORMAP_JET))
+        # Ensure anomaly_map_colored is 3-channel if it's not already
+        if len(anomaly_map_colored.shape) == 2: # If it's 2D, convert to 3D
+            anomaly_map_colored = cv2.cvtColor(anomaly_map_colored, cv2.COLOR_GRAY2BGR)
 
         # Overlay heatmap on original image
         image_resized = cv2.resize(image_bgr, (image_size[1], image_size[0]))
-        overlay = cv2.addWeighted(image_resized, 0.6, anomaly_map_colored, 0.4, 0)
+
+        print(f"Shape of image_resized: {image_resized.shape}, dtype: {image_resized.dtype}")
+        print(f"Shape of anomaly_map_colored: {anomaly_map_colored.shape}, dtype: {anomaly_map_colored.dtype}")
+
+        # Convert both images to float32 for weighted addition
+        image_resized_float = image_resized.astype(np.float32)
+        anomaly_map_colored_float = anomaly_map_colored.astype(np.float32)
+
+        overlay = cv2.addWeighted(image_resized_float, 0.6, anomaly_map_colored_float, 0.4, 0)
+        overlay = overlay.astype(np.uint8) # Convert back to uint8 for saving
 
         # Create binary mask from anomaly map for contour detection
-        # Use a threshold (e.g., 0.5) on the normalized anomaly map to identify anomalous regions
         binary_mask = (anomaly_map_norm > threshold).astype(np.uint8) * 255
         
         # Find contours
@@ -125,4 +136,4 @@ def infer(model_path: str, input_path: str, image_size: tuple[int, int], thresho
 
 if __name__ == "__main__":
     args = get_args()
-    infer(args.model_path, args.input_path, tuple(args.image_size), args.threshold, args.output_path)
+    infer_onnx(args.model_path, args.input_path, tuple(args.image_size), args.threshold, args.output_path)

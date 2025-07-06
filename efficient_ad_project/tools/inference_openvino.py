@@ -1,19 +1,18 @@
 import argparse
 import cv2
 import numpy as np
-import torch
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
 import os
 import time
 
-from anomalib.models import EfficientAd
+from openvino.runtime import Core
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
 
 def get_args():
     """Get command line arguments."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, required=True, help="Path to the trained model checkpoint (.ckpt).")
+    parser.add_argument("--model_path", type=str, required=True, help="Path to the trained OpenVINO model (.xml).")
     parser.add_argument("--input_path", type=str, required=True, help="Path to the image or directory to inspect.")
     parser.add_argument("--image_size", type=int, nargs=2, default=[256, 256], help="Image size (height width) for resizing.")
     parser.add_argument("--threshold", type=float, default=0.5, help="Anomaly score threshold for classification.")
@@ -22,16 +21,17 @@ def get_args():
 
 
 def infer(model_path: str, input_path: str, image_size: tuple[int, int], threshold: float, output_path: str):
-    """Main inference function."""
-    
-    # 0. Set device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    """Main inference function for OpenVINO model."""
+    # 0. Set device and load OpenVINO model
+    ie = Core()
+    device = "GPU" if "GPU" in ie.available_devices else "CPU"
     print(f"Using device: {device}")
 
-    # 1. Load the model from the checkpoint
-    print(f"Loading model from {model_path}")
-    model = EfficientAd.load_from_checkpoint(model_path).to(device)
-    model.eval() # Set model to evaluation mode
+    print(f"Loading OpenVINO model from {model_path}")
+    model = ie.read_model(model=model_path)
+    compiled_model = ie.compile_model(model=model, device_name=device)
+    output_layer = compiled_model.output(0)  # Anomaly score
+    anomaly_map_layer = compiled_model.output(2) # Anomaly map
 
     # 2. Define image transformations (must be same as training)
     transform = A.Compose([
@@ -63,19 +63,19 @@ def infer(model_path: str, input_path: str, image_size: tuple[int, int], thresho
         image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
         
         transformed = transform(image=image_rgb)
-        image_tensor = transformed["image"].unsqueeze(0).to(device) # Add batch dimension and move to device
+        image_tensor = transformed["image"].unsqueeze(0).numpy() # Add batch dimension and convert to numpy
 
         # 4. Perform inference and measure time
         print("Performing inference...")
         start_time = time.time()
-        with torch.no_grad():
-            output = model(image_tensor)
+        results = compiled_model([image_tensor])
         end_time = time.time()
         inference_time = end_time - start_time
         all_inference_times.append(inference_time)
 
-        anomaly_map = output[1].cpu().numpy().astype(np.float32)
-        anomaly_score = output[0].item()
+        anomaly_score = results[output_layer].item()
+        # anomaly_map from OpenVINO is already 2D, no need for squeeze()
+        anomaly_map = results[anomaly_map_layer].astype(np.float32).squeeze() # Squeeze to remove batch and channel dims if present
 
         # 5. Visualize and save the results
         print(f"Anomaly score: {anomaly_score:.4f}")
@@ -84,11 +84,11 @@ def infer(model_path: str, input_path: str, image_size: tuple[int, int], thresho
         # Normalize anomaly map for visualization
         anomaly_map = anomaly_map.astype(np.float32)
         anomaly_map_norm = (anomaly_map - anomaly_map.min()) / (anomaly_map.max() - anomaly_map.min() + 1e-6)
-        anomaly_map_colored = (cv2.applyColorMap((anomaly_map_norm * 255).astype(np.uint8), cv2.COLORMAP_JET))
+        anomaly_map_colored = cv2.applyColorMap(np.ascontiguousarray((anomaly_map_norm * 255).astype(np.uint8)), cv2.COLORMAP_JET)
 
         # Overlay heatmap on original image
         image_resized = cv2.resize(image_bgr, (image_size[1], image_size[0]))
-        overlay = cv2.addWeighted(image_resized, 0.6, anomaly_map_colored, 0.4, 0)
+        overlay = cv2.addWeighted(image_resized.astype(np.float32), 0.6, anomaly_map_colored.astype(np.float32), 0.4, 0).astype(np.uint8)
 
         # Create binary mask from anomaly map for contour detection
         # Use a threshold (e.g., 0.5) on the normalized anomaly map to identify anomalous regions
