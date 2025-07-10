@@ -5,3 +5,13 @@ numpy
 albumentations
 anomalib
 lightning
+PyYAML
+kornia
+pandas
+scikit-learn
+openvino
+timm
+einops
+FrEIA
+python-dotenv
+open_clip_torch

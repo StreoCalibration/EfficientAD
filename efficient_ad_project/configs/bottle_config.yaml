@@ -5,7 +5,7 @@ model:
 
 data:
   source: mvtec
-  path: F:/Source/EfficientAD/datasets/mvtec_anomaly_detection
+  path: Z:/Source_Python/EfficientAD/datasets/mvtec_anomaly_detection/bottle
   category: bottle
     
   # 공통 설정
@@ -14,4 +14,4 @@ data:
   eval_batch_size: 32
 
 trainer:
-  max_epochs: 20
+  max_epochs: 200

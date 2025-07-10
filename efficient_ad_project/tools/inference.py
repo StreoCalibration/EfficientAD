@@ -74,17 +74,18 @@ def infer(model_path: str, input_path: str, image_size: tuple[int, int], thresho
         inference_time = end_time - start_time
         all_inference_times.append(inference_time)
 
-        anomaly_map = output[1].cpu().numpy().astype(np.float32)
-        anomaly_score = output[0].item()
+        anomaly_map = output.anomaly_map.squeeze().cpu().numpy().astype(np.float32)
+        anomaly_score = output.pred_score.item()
 
         # 5. Visualize and save the results
         print(f"Anomaly score: {anomaly_score:.4f}")
+        print(f"Anomaly map mean: {anomaly_map.mean():.4f}, std: {anomaly_map.std():.4f}")
         print(f"Inference time: {inference_time:.4f} seconds")
 
         # Normalize anomaly map for visualization
         anomaly_map = anomaly_map.astype(np.float32)
         anomaly_map_norm = (anomaly_map - anomaly_map.min()) / (anomaly_map.max() - anomaly_map.min() + 1e-6)
-        anomaly_map_colored = (cv2.applyColorMap((anomaly_map_norm * 255).astype(np.uint8), cv2.COLORMAP_JET))
+        anomaly_map_colored = cv2.resize(cv2.applyColorMap((anomaly_map_norm * 255).astype(np.uint8), cv2.COLORMAP_JET), (image_size[1], image_size[0]))
 
         # Overlay heatmap on original image
         image_resized = cv2.resize(image_bgr, (image_size[1], image_size[0]))
@@ -94,11 +95,15 @@ def infer(model_path: str, input_path: str, image_size: tuple[int, int], thresho
         # Use a threshold (e.g., 0.5) on the normalized anomaly map to identify anomalous regions
         binary_mask = (anomaly_map_norm > threshold).astype(np.uint8) * 255
         
+        # Debug prints for anomaly map and binary mask
+        print(f"Anomaly map norm min: {anomaly_map_norm.min():.4f}, max: {anomaly_map_norm.max():.4f}")
+        print(f"Binary mask unique values: {np.unique(binary_mask)}")
+
         # Find contours
         contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
-        # Draw contours on the overlay image
-        cv2.drawContours(overlay, contours, -1, (0, 255, 255), 2) # Yellow contours for anomalies
+        # Draw contours on the overlay image (Red, thicker for visibility)
+        cv2.drawContours(overlay, contours, -1, (0, 0, 255), 5) # Red contours for anomalies
 
         # Add text for score, verdict, and inference time
         verdict = "Anomalous" if anomaly_score > threshold else "Normal"
@@ -117,6 +122,16 @@ def infer(model_path: str, input_path: str, image_size: tuple[int, int], thresho
 
         cv2.imwrite(output_filename, overlay)
         print(f"Result saved to {output_filename}")
+
+        # Save the binary mask for debugging
+        mask_output_filename = os.path.splitext(output_filename)[0] + "_mask" + os.path.splitext(output_filename)[1]
+        cv2.imwrite(mask_output_filename, binary_mask)
+        print(f"Binary mask saved to {mask_output_filename}")
+
+        # Save the normalized anomaly map for debugging
+        anomaly_map_norm_output_filename = os.path.splitext(output_filename)[0] + "_anomaly_map_norm" + os.path.splitext(output_filename)[1]
+        cv2.imwrite(anomaly_map_norm_output_filename, (anomaly_map_norm * 255).astype(np.uint8))
+        print(f"Normalized anomaly map saved to {anomaly_map_norm_output_filename}")
 
     if all_inference_times:
         avg_inference_time = sum(all_inference_times) / len(all_inference_times)
