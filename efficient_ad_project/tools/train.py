@@ -9,7 +9,8 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from anomalib.engine import Engine
 from anomalib.models import EfficientAd
 import torch
-from anomalib.data import MVTecAD
+from anomalib.data import MVTecAD, Folder
+from anomalib.data.utils import TestSplitMode
 from torchvision.transforms.v2 import Compose, Resize, Normalize, ToDtype
 
 from src.data.provider import RealDatasetProvider, SyntheticDatasetProvider
@@ -27,6 +28,12 @@ def train(config_path: str):
     # Load the configuration file
     with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
+
+    # Check if dataset path exists
+    dataset_path = Path(config["data"]["path"])
+    if not dataset_path.exists():
+        print(f"Dataset not found at {dataset_path}. Skipping training for {config['data']['source']}.")
+        return
 
     # 1. Select the dataset provider based on the config
     data_source = config["data"]["source"]
@@ -51,6 +58,22 @@ def train(config_path: str):
             train_batch_size=config["data"]["train_batch_size"],
             eval_batch_size=config["data"]["eval_batch_size"],
             augmentations=augmentations,
+        )
+    elif data_source == "ky":
+        image_size = tuple(config["data"]["image_size"])
+        augmentations = Compose([
+            Resize(image_size),
+            Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
+            ToDtype(torch.float32, scale=True),
+        ])
+        datamodule = Folder(
+            name=config["data"]["name"],
+            root=config["data"]["path"],
+            normal_dir="train/good/Coaxial",
+            train_batch_size=config["data"]["train_batch_size"],
+            eval_batch_size=config["data"]["eval_batch_size"],
+            augmentations=augmentations,
+            test_split_mode=TestSplitMode.FROM_DIR,
         )
     else:
         raise ValueError(f"Unknown data source: {data_source}")
